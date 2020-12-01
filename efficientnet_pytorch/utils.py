@@ -150,6 +150,69 @@ def drop_connect(inputs, p, training):
     return output
 
 
+class SubWBatchNorm2d(nn.BatchNorm2d):
+    def forward(self, input: torch.Tensor, sub_w: float = 1.) -> torch.Tensor:
+        self._check_input_dim(input)
+
+        # exponential_average_factor is set to self.momentum
+        # (when it is available) only so that it gets updated
+        # in ONNX graph when this node is exported to ONNX.
+        if self.momentum is None:
+            exponential_average_factor = 0.0
+        else:
+            exponential_average_factor = self.momentum
+
+        if self.training and self.track_running_stats:
+            # TODO: if statement only here to tell the jit to skip emitting this when it is None
+            if self.num_batches_tracked is not None:
+                self.num_batches_tracked = self.num_batches_tracked + 1
+                if self.momentum is None:  # use cumulative moving average
+                    exponential_average_factor = 1.0 / float(self.num_batches_tracked)
+                else:  # use exponential moving average
+                    exponential_average_factor = self.momentum
+
+        """ Decide whether the mini-batch stats should be used for normalization rather than the buffers.
+        Mini-batch stats are used in training mode, and in eval mode when buffers are None.
+        """
+        if self.training:
+            bn_training = True
+        else:
+            bn_training = (self.running_mean is None) and (self.running_var is None)
+
+        # Don't update BN statistics when doing subnetwork
+        bn_training = False if sub_w != 1. else bn_training
+
+        """Buffers are only updated if they are to be tracked and we are in training mode. Thus they only need to be
+        passed when the update should occur (i.e. in training mode when they are tracked), or when buffer stats are
+        used for normalization (i.e. in eval mode when buffers are not None).
+        """
+
+        c = int(sub_w * self.weight.size(0))
+        running_mean = self.running_mean[:c]
+        running_var = self.running_var[:c]
+        weight = self.weight[:c]
+        bias = self.bias[:c]
+
+        return F.batch_norm(
+            input,
+            # If buffers are not to be tracked, ensure that they won't be updated
+            running_mean if not self.training or self.track_running_stats else None,
+            running_var if not self.training or self.track_running_stats else None,
+            weight, bias, bn_training, exponential_average_factor, self.eps)
+
+
+class SubWLinear(nn.Linear):
+    def forward(self, input: torch.Tensor, sub_w: float = 1., sub_w_in: float = None, sub_w_out: float = None) -> torch.Tensor:
+
+        ci = int(sub_w * self.weight.size(1)) if sub_w_in is None else int(sub_w_in * self.weight.size(1))
+        co = int(sub_w * self.weight.size(0)) if sub_w_out is None else int(sub_w_out * self.weight.size(0))
+
+        weight = self.weight[:co, :ci]
+        bias = self.bias[:co] if self.bias is not None else None
+
+        return F.linear(input, weight, bias)
+
+
 def get_width_and_height_from_size(x):
     """Obtain height and width from x.
 
@@ -203,12 +266,12 @@ def get_same_padding_conv2d(image_size=None):
         Conv2dDynamicSamePadding or Conv2dStaticSamePadding.
     """
     if image_size is None:
-        return Conv2dDynamicSamePadding
+        return SubWConv2dDynamicSamePadding
     else:
-        return partial(Conv2dStaticSamePadding, image_size=image_size)
+        return partial(SubWConv2dStaticSamePadding, image_size=image_size)
 
 
-class Conv2dDynamicSamePadding(nn.Conv2d):
+class SubWConv2dDynamicSamePadding(nn.Conv2d):
     """2D Convolutions like TensorFlow, for a dynamic image size.
        The padding is operated in forward function by calculating dynamically.
     """
@@ -229,7 +292,7 @@ class Conv2dDynamicSamePadding(nn.Conv2d):
         super().__init__(in_channels, out_channels, kernel_size, stride, 0, dilation, groups, bias)
         self.stride = self.stride if len(self.stride) == 2 else [self.stride[0]] * 2
 
-    def forward(self, x):
+    def forward(self, x, sub_w: float = 1., sub_w_in: float = None, sub_w_out: float = None):
         ih, iw = x.size()[-2:]
         kh, kw = self.weight.size()[-2:]
         sh, sw = self.stride
@@ -238,10 +301,18 @@ class Conv2dDynamicSamePadding(nn.Conv2d):
         pad_w = max((ow - 1) * self.stride[1] + (kw - 1) * self.dilation[1] + 1 - iw, 0)
         if pad_h > 0 or pad_w > 0:
             x = F.pad(x, [pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2])
-        return F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+
+        ikc = int(sub_w * self.weight.size(1)) if sub_w_in is None else int(sub_w_in * self.weight.size(1))
+        okc = int(sub_w * self.weight.size(0)) if sub_w_out is None else int(sub_w_out * self.weight.size(0))
+
+        weight = self.weight[:okc, :ikc]
+        bias = self.bias[:okc] if self.bias is not None else None
+
+        x = F.conv2d(x, weight, bias, self.stride, self.padding, self.dilation, self.groups)
+        return x
 
 
-class Conv2dStaticSamePadding(nn.Conv2d):
+class SubWConv2dStaticSamePadding(nn.Conv2d):
     """2D Convolutions like TensorFlow's 'SAME' mode, with the given input image size.
        The padding mudule is calculated in construction function, then used in forward.
     """
@@ -266,9 +337,17 @@ class Conv2dStaticSamePadding(nn.Conv2d):
         else:
             self.static_padding = nn.Identity()
 
-    def forward(self, x):
+    def forward(self, x, sub_w: float = 1., sub_w_in: float = None, sub_w_out: float = None):
         x = self.static_padding(x)
-        x = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+
+        ikc = int(sub_w * self.weight.size(1)) if sub_w_in is None else int(sub_w_in * self.weight.size(1))
+        okc = int(sub_w * self.weight.size(0)) if sub_w_out is None else int(sub_w_out * self.weight.size(0))
+        groups = self.groups if self.groups == 1 else okc
+
+        weight = self.weight[:okc, :ikc]
+        bias = self.bias[:okc] if self.bias is not None else None
+
+        x = F.conv2d(x, weight, bias, self.stride, self.padding, self.dilation, groups)
         return x
 
 
