@@ -50,6 +50,10 @@ class Cifar100Dataset(Dataset):
     def __getitem__(self, item):
         img = np.reshape(self.data[b'data'][item], (3, 32, 32)).transpose((1, 2, 0))
 
+        import matplotlib.pyplot as plt
+        plt.imshow(cv2.resize(img, dsize=(224, 224), interpolation=cv2.INTER_LINEAR))
+        plt.show()
+
         # Pad the image so we we don't have dark areas at the border
         img = cv2.copyMakeBorder(img, P, P, P, P, borderType=cv2.BORDER_REPLICATE)
 
@@ -64,7 +68,7 @@ class Cifar100Dataset(Dataset):
             theta = np.deg2rad(np.random.uniform(-30, 30))
             alpha = np.random.uniform(0.9, 1.1)*SZT/SZ
             M = np.matmul(affine_about_recenter(center=(SZ / 2, SZ / 2),
-                                                recenter=(SZT / 2 + alpha * 3 / 7, SZT / 2 + alpha * 3 / 7),
+                                                recenter=(SZT / 2 + 3, SZT / 2 + 3),
                                                 rotation=theta,
                                                 scale=alpha),
                           M)
@@ -72,7 +76,7 @@ class Cifar100Dataset(Dataset):
             # If n == 0 we are in evaluation mode so don't apply augmentation
             alpha = SZT/SZ
             M = np.matmul(affine_about_recenter(center=(SZ / 2, SZ / 2),
-                                                recenter=(SZT / 2 + alpha * 3 / 7, SZT / 2 + alpha * 3 / 7),
+                                                recenter=(SZT / 2 + 3, SZT / 2 + 3),
                                                 rotation=0,
                                                 scale=alpha),
                           M)
@@ -88,6 +92,9 @@ class Cifar100Dataset(Dataset):
                 Mi = np.matmul(affine_about_recenter((SZT/2, SZT/2), (SZT/2, SZT/2), 0, alpha), M)
 
             img = cv2.warpPerspective(img, Mi, dsize=(SZT, SZT), flags=cv2.INTER_LINEAR)
+
+            plt.imshow(img)
+            plt.show()
 
             # Normalize
             img = img.astype(np.float64) / 255
