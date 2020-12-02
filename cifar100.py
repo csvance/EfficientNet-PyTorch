@@ -38,14 +38,32 @@ class Cifar100Dataset(Dataset):
 
         imgs = [img] + [img for _ in range(0, self.n)]
         x_n = []
+
+        # Augment full network image
+        theta = np.deg2rad(np.random.uniform(-30, 30))
+        alpha = np.random.uniform(224 / 32 * 0.9, 224 / 32 * 1.1)
+
+        c = alpha * 32 / 2
+
+        M = np.eye(3)
+        M = np.matmul(AffineTransform(translation=(-32 / 2, -32 / 2)).params, M)
+        M = np.matmul(AffineTransform(rotation=theta, scale=(alpha, alpha)).params, M)
+        M = np.matmul(AffineTransform(translation=(c, c)).params, M)
+        Mi = M
+
         for idx, img in enumerate(imgs):
 
             if idx > 0:
-                alpha = np.random.uniform(224 / 32 * 0.8, 224 / 32 * 1.2)
-                M = AffineTransform(scale=(alpha, alpha))
-                img = cv2.warpPerspective(img, M.params, dsize=(224, 224), flags=cv2.INTER_LINEAR)
-            else:
-                img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_LINEAR)
+                # Additional scale augmentation for sub networks
+                alpha = np.random.uniform(0.9, 1.1)
+
+                Mi = M
+                # Center the scale change
+                Mi = np.matmul(AffineTransform(translation=(-c, -c)).params, Mi)
+                Mi = np.matmul(AffineTransform(scale=(alpha, alpha)).params, Mi)
+                Mi = np.matmul(AffineTransform(translation=(c, c)).params, Mi)
+
+            img = cv2.warpPerspective(img, Mi, dsize=(224, 224), flags=cv2.INTER_LINEAR)
 
             # Normalize
             img = img.astype(np.float64) / 255
