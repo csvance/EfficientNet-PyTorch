@@ -171,7 +171,7 @@ class Cifar100EfficientNetModule(LightningModule):
         return [optimizer], [schedule]
 
     def train_dataloader(self):
-        return DataLoader(Cifar100Dataset(self._trainval),
+        return DataLoader(Cifar100Dataset(self._trainval, n=self.n),
                           batch_size=BATCH_SIZE,
                           shuffle=True,
                           drop_last=True,
