@@ -93,7 +93,7 @@ class Cifar100Dataset(Dataset):
                 alpha = np.random.uniform(0.9, 1.1)
                 Mi = np.matmul(affine_about_recenter((szt/2, szt/2), (szt/2, szt/2), 0, alpha), M)
 
-            img = cv2.warpPerspective(img, Mi, dsize=(224, 224), flags=cv2.INTER_LINEAR)
+            img = cv2.warpPerspective(img, Mi, dsize=(szt, szt), flags=cv2.INTER_LINEAR)
 
             # Normalize
             img = img.astype(np.float64) / 255
