@@ -23,15 +23,10 @@ MAX_LR = 0.01
 WEIGHT_DECAY = 1e-4
 
 
-def affine(rotation, scale):
-    M = AffineTransform(rotation=rotation, scale=(scale, scale)).params
-    return M
-
-
-def affine_about_recenter(about, center, rotation, scale):
-    M = AffineTransform(translation=(-about[0], -about[1])).params
-    M = np.matmul(affine(rotation, scale), M)
-    M = np.matmul(AffineTransform(translation=(center[0], center[1])).params, M)
+def affine_about_recenter(center, recenter, rotation, scale):
+    M = AffineTransform(translation=(-center[0], -center[1])).params
+    M = np.matmul(AffineTransform(rotation=rotation, scale=(scale, scale)).params, M)
+    M = np.matmul(AffineTransform(translation=(recenter[0], recenter[1])).params, M)
     return M
 
 
@@ -68,16 +63,16 @@ class Cifar100Dataset(Dataset):
             # If n > 0 then we assume we are in training mode so we use augment each image
             theta = np.deg2rad(np.random.uniform(-30, 30))
             alpha = np.random.uniform(0.9, 1.1)*szt/sz
-            M = np.matmul(affine_about_recenter(about=(sz / 2, sz / 2),
-                                                center=(szt / 2 + alpha*3/7, szt / 2 + alpha*3/7),
+            M = np.matmul(affine_about_recenter(center=(sz / 2, sz / 2),
+                                                recenter=(szt / 2 + alpha * 3 / 7, szt / 2 + alpha * 3 / 7),
                                                 rotation=theta,
                                                 scale=alpha),
                           M)
         elif self.n == 0:
             # If n == 0 we are in evaluation mode so don't apply augmentation
             alpha = szt/sz
-            M = np.matmul(affine_about_recenter(about=(sz / 2, sz / 2),
-                                                center=(szt / 2 + alpha*3/7, szt / 2 + alpha*3/7),
+            M = np.matmul(affine_about_recenter(center=(sz / 2, sz / 2),
+                                                recenter=(szt / 2 + alpha * 3 / 7, szt / 2 + alpha * 3 / 7),
                                                 rotation=0,
                                                 scale=alpha),
                           M)
