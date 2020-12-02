@@ -146,7 +146,7 @@ class Cifar100EfficientNetModule(LightningModule):
         schedule = {'scheduler': OneCycleLR(optimizer,
                                             max_lr=MAX_LR,
                                             epochs=EPOCHS,
-                                            steps_per_epoch=int(len(self._trainidx) / BATCH_SIZE),
+                                            steps_per_epoch=int(len(self._idx) / BATCH_SIZE),
                                             verbose=False),
                     'name': 'learning_rate',
                     'interval': 'step',
