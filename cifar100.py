@@ -20,6 +20,7 @@ from efficientnet_pytorch import EfficientNet
 NUM_WORKERS = 0
 EPOCHS = 20
 BATCH_SIZE = 32
+MAX_LR = 0.01
 
 
 class Cifar100Dataset(Dataset):
@@ -161,7 +162,7 @@ class Cifar100EfficientNetModule(LightningModule):
                                     weight_decay=1e-4,
                                     eps=1e-5))
         schedule = {'scheduler': OneCycleLR(optimizer,
-                                            max_lr=0.01,
+                                            max_lr=MAX_LR,
                                             epochs=EPOCHS,
                                             steps_per_epoch=int(len(self._trainidx) / BATCH_SIZE),
                                             verbose=False),
@@ -192,7 +193,8 @@ class Cifar100EfficientNetModule(LightningModule):
 
 
 def main():
-    model = Cifar100EfficientNetModule(alpha=0.8, n=3, efficientnet='efficientnet-b0')
+    model = Cifar100EfficientNetModule(alpha=0.8, n=3,
+                                       efficientnet='efficientnet-b0')
 
     checkpoint_callback = ModelCheckpoint(monitor='val_loss',
                                           dirpath='checkpoints/',
