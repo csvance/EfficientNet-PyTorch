@@ -23,6 +23,18 @@ MAX_LR = 0.01
 WEIGHT_DECAY = 1e-4
 
 
+def affine(rotation, scale):
+    M = AffineTransform(rotation=rotation, scale=(scale, scale)).params
+    return M
+
+
+def affine_about_recenter(about, center, rotation, scale):
+    M = AffineTransform(translation=(-about[0], -about[1])).params
+    M = np.matmul(affine(rotation, scale), M)
+    M = np.matmul(AffineTransform(translation=(center[0], center[1])).params, M)
+    return M
+
+
 class Cifar100Dataset(Dataset):
     def __init__(self, data, n: int = 3):
         self.data = data
@@ -36,22 +48,39 @@ class Cifar100Dataset(Dataset):
     def __getitem__(self, item):
         img = np.reshape(self.data[b'data'][item], (3, 32, 32)).transpose((1, 2, 0))
 
+        # p is the amount of padding on each side of the image
+        p = 2
+        # sz is the size of the image before padding
+        sz = 32
+        # szt is the target size
+        szt = 224
+
+        # Pad the image so we we don't have dark areas at the border
+        img = cv2.copyMakeBorder(img, p, p, p, p, borderType=cv2.BORDER_REPLICATE)
+
         imgs = [img] + [img for _ in range(0, self.n)]
         x_n = []
 
-        M = np.eye(3)
+        # Compensate for padding
+        M = AffineTransform(translation=(-p, -p)).params
 
         if self.n > 0:
             # If n > 0 then we assume we are in training mode so we use augment each image
             theta = np.deg2rad(np.random.uniform(-30, 30))
-            alpha = np.random.uniform(224 / 32 * 0.9, 224 / 32 * 1.1)
-            c = alpha * 32 / 2
-            M = np.matmul(AffineTransform(translation=(-32 / 2, -32 / 2)).params, M)
-            M = np.matmul(AffineTransform(rotation=theta, scale=(alpha, alpha)).params, M)
-            M = np.matmul(AffineTransform(translation=(c, c)).params, M)
+            alpha = np.random.uniform(0.9, 1.1)*szt/sz
+            M = np.matmul(affine_about_recenter(about=(sz / 2, sz / 2),
+                                                center=(szt / 2 + alpha*3/7, szt / 2 + alpha*3/7),
+                                                rotation=theta,
+                                                scale=alpha),
+                          M)
         elif self.n == 0:
             # If n == 0 we are in evaluation mode so don't apply augmentation
-            c = 32 / 2
+            alpha = szt/sz
+            M = np.matmul(affine_about_recenter(about=(sz / 2, sz / 2),
+                                                center=(szt / 2 + alpha*3/7, szt / 2 + alpha*3/7),
+                                                rotation=0,
+                                                scale=alpha),
+                          M)
         else:
             raise ValueError
 
@@ -62,12 +91,7 @@ class Cifar100Dataset(Dataset):
             if idx > 0:
                 # Additional scale augmentation for sub networks
                 alpha = np.random.uniform(0.9, 1.1)
-
-                Mi = M
-                # Center the scale change
-                Mi = np.matmul(AffineTransform(translation=(-c, -c)).params, Mi)
-                Mi = np.matmul(AffineTransform(scale=(alpha, alpha)).params, Mi)
-                Mi = np.matmul(AffineTransform(translation=(c, c)).params, Mi)
+                Mi = np.matmul(affine_about_recenter((szt/2, szt/2), (szt/2, szt/2), 0, alpha), M)
 
             img = cv2.warpPerspective(img, Mi, dsize=(224, 224), flags=cv2.INTER_LINEAR)
 
