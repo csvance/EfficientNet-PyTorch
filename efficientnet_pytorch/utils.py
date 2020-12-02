@@ -179,9 +179,6 @@ class SubWBatchNorm2d(nn.BatchNorm2d):
         else:
             bn_training = (self.running_mean is None) and (self.running_var is None)
 
-        # Don't update BN statistics when doing subnetwork
-        bn_training = False if sub_w != 1. else bn_training
-
         """Buffers are only updated if they are to be tracked and we are in training mode. Thus they only need to be
         passed when the update should occur (i.e. in training mode when they are tracked), or when buffer stats are
         used for normalization (i.e. in eval mode when buffers are not None).
@@ -196,8 +193,8 @@ class SubWBatchNorm2d(nn.BatchNorm2d):
         return F.batch_norm(
             input,
             # If buffers are not to be tracked, ensure that they won't be updated
-            running_mean if not self.training or self.track_running_stats else None,
-            running_var if not self.training or self.track_running_stats else None,
+            running_mean if not self.training or (self.track_running_stats and sub_w == 1.) else None,
+            running_var if not self.training or (self.track_running_stats and sub_w == 1.) else None,
             weight, bias, bn_training, exponential_average_factor, self.eps)
 
 

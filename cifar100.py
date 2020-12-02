@@ -14,7 +14,7 @@ import numpy as np
 import pickle
 
 NUM_WORKERS = 0
-EPOCHS = 10
+EPOCHS = 20
 BATCH_SIZE = 32
 
 
@@ -157,7 +157,7 @@ class Cifar100EfficientNetModule(LightningModule):
                                     weight_decay=1e-4,
                                     eps=1e-5))
         schedule = {'scheduler': OneCycleLR(optimizer,
-                                            max_lr=0.005,
+                                            max_lr=0.01,
                                             epochs=EPOCHS,
                                             steps_per_epoch=int(len(self._trainidx) / BATCH_SIZE),
                                             verbose=False),
@@ -196,20 +196,15 @@ def main():
                                           save_top_k=3,
                                           verbose=True,
                                           mode='min')
-    early_stop_callback = EarlyStopping(
-        monitor='val_loss',
-        patience=10,
-        verbose=True,
-        mode='min'
-    )
 
     trainer = Trainer(gpus=1,
                       precision=32,
                       max_epochs=EPOCHS,
                       log_every_n_steps=5,
                       flush_logs_every_n_steps=10,
-                      callbacks=[checkpoint_callback, early_stop_callback])
+                      callbacks=[checkpoint_callback])
     trainer.fit(model)
+    trainer.save_checkpoint('checkpoints/cifar-100-final.ckpt')
     trainer.test()
 
 
