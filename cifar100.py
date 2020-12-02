@@ -30,6 +30,13 @@ SZ = 32
 SZT = 224
 
 
+class OneCycleLRLookahead(OneCycleLR):
+    def __init__(self,
+                 optimizer,
+                 **kwargs):
+        super().__init__(optimizer.optimizer, **kwargs)
+
+
 def affine_about_recenter(center, recenter, rotation, scale):
     M = AffineTransform(translation=(-center[0], -center[1])).params
     M = np.matmul(AffineTransform(rotation=rotation, scale=(scale, scale)).params, M)
@@ -62,7 +69,7 @@ class Cifar100Dataset(Dataset):
         if self.n > 0:
             # If n > 0 then we assume we are in training mode so we augment each image
             theta = np.deg2rad(np.random.uniform(-30, 30))
-            alpha = np.random.uniform(0.9, 1.1)*SZT/SZ
+            alpha = np.random.uniform(0.9, 1.1) * SZT / SZ
             M = np.matmul(affine_about_recenter(center=(SZ / 2, SZ / 2),
                                                 recenter=(SZT / 2 + 3, SZT / 2 + 3),
                                                 rotation=theta,
@@ -70,7 +77,7 @@ class Cifar100Dataset(Dataset):
                           M)
         elif self.n == 0:
             # If n == 0 we are in evaluation mode so don't augment
-            alpha = SZT/SZ
+            alpha = SZT / SZ
             M = np.matmul(affine_about_recenter(center=(SZ / 2, SZ / 2),
                                                 recenter=(SZT / 2 + 3, SZT / 2 + 3),
                                                 rotation=0,
@@ -85,7 +92,7 @@ class Cifar100Dataset(Dataset):
             if idx > 0:
                 # Gradient Augmentation
                 alpha = np.random.uniform(0.9, 1.1)
-                Mi = np.matmul(affine_about_recenter((SZT/2, SZT/2), (SZT/2, SZT/2), 0, alpha), M)
+                Mi = np.matmul(affine_about_recenter((SZT / 2, SZT / 2), (SZT / 2, SZT / 2), 0, alpha), M)
 
             img = cv2.warpPerspective(img, Mi, dsize=(SZT, SZT), flags=cv2.INTER_LINEAR)
 
@@ -176,11 +183,12 @@ class Cifar100EfficientNetModule(LightningModule):
                                     lr=0.001,
                                     weight_decay=WEIGHT_DECAY,
                                     eps=1e-5))
-        schedule = {'scheduler': OneCycleLR(optimizer,
-                                            max_lr=MAX_LR,
-                                            epochs=EPOCHS,
-                                            steps_per_epoch=int(len(self._trainval[b'filenames']) / BATCH_SIZE),
-                                            verbose=False),
+        schedule = {'scheduler': OneCycleLRLookahead(optimizer,
+                                                     max_lr=MAX_LR,
+                                                     epochs=EPOCHS,
+                                                     steps_per_epoch=int(
+                                                         len(self._trainval[b'filenames']) / BATCH_SIZE),
+                                                     verbose=False),
                     'name': 'learning_rate',
                     'interval': 'step',
                     'frequency': 1
