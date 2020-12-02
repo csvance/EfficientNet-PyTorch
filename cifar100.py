@@ -39,16 +39,22 @@ class Cifar100Dataset(Dataset):
         imgs = [img] + [img for _ in range(0, self.n)]
         x_n = []
 
-        # Augment full network image
-        theta = np.deg2rad(np.random.uniform(-30, 30))
-        alpha = np.random.uniform(224 / 32 * 0.9, 224 / 32 * 1.1)
-
-        c = alpha * 32 / 2
-
         M = np.eye(3)
-        M = np.matmul(AffineTransform(translation=(-32 / 2, -32 / 2)).params, M)
-        M = np.matmul(AffineTransform(rotation=theta, scale=(alpha, alpha)).params, M)
-        M = np.matmul(AffineTransform(translation=(c, c)).params, M)
+
+        if self.n > 0:
+            # If n > 0 then we assume we are in training mode so we use augment each image
+            theta = np.deg2rad(np.random.uniform(-30, 30))
+            alpha = np.random.uniform(224 / 32 * 0.9, 224 / 32 * 1.1)
+            c = alpha * 32 / 2
+            M = np.matmul(AffineTransform(translation=(-32 / 2, -32 / 2)).params, M)
+            M = np.matmul(AffineTransform(rotation=theta, scale=(alpha, alpha)).params, M)
+            M = np.matmul(AffineTransform(translation=(c, c)).params, M)
+        elif self.n == 0:
+            # If n == 0 we are in evaluation mode so don't apply augmentation
+            c = 32 / 2
+        else:
+            raise ValueError
+
         Mi = M
 
         for idx, img in enumerate(imgs):
