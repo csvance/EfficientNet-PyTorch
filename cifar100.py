@@ -60,7 +60,7 @@ class Cifar100Dataset(Dataset):
         M = AffineTransform(translation=(-P, -P)).params
 
         if self.n > 0:
-            # If n > 0 then we assume we are in training mode so we use augment each image
+            # If n > 0 then we assume we are in training mode so we augment each image
             theta = np.deg2rad(np.random.uniform(-30, 30))
             alpha = np.random.uniform(0.9, 1.1)*SZT/SZ
             M = np.matmul(affine_about_recenter(center=(SZ / 2, SZ / 2),
@@ -69,7 +69,7 @@ class Cifar100Dataset(Dataset):
                                                 scale=alpha),
                           M)
         elif self.n == 0:
-            # If n == 0 we are in evaluation mode so don't apply augmentation
+            # If n == 0 we are in evaluation mode so don't augment
             alpha = SZT/SZ
             M = np.matmul(affine_about_recenter(center=(SZ / 2, SZ / 2),
                                                 recenter=(SZT / 2 + 3, SZT / 2 + 3),
@@ -83,7 +83,7 @@ class Cifar100Dataset(Dataset):
             Mi = M
 
             if idx > 0:
-                # Additional scale augmentation for sub networks
+                # Gradient Augmentation
                 alpha = np.random.uniform(0.9, 1.1)
                 Mi = np.matmul(affine_about_recenter((SZT/2, SZT/2), (SZT/2, SZT/2), 0, alpha), M)
 
@@ -96,7 +96,7 @@ class Cifar100Dataset(Dataset):
             img = img.transpose((2, 0, 1))
             x_n.append(img)
 
-        # Original image and n augmentations
+        # Original image and n augmentations of the original for GradAug
         x = x_n[0]
         x_n = x_n[1:]
 
