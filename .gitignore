@@ -123,6 +123,8 @@ tf_to_pytorch/pretrained_tensorflow
 !tf_to_pytorch/pretrained_tensorflow/download.sh
 examples/imagenet/run.sh
 
+lightning_logs/
+checkpoints/
 cifar-100-python/meta
 cifar-100-python/test
 cifar-100-python/train

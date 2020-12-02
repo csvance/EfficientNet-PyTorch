@@ -157,7 +157,7 @@ class Cifar100EfficientNetModule(LightningModule):
                                     weight_decay=1e-4,
                                     eps=1e-5))
         schedule = {'scheduler': OneCycleLR(optimizer,
-                                            max_lr=0.01,
+                                            max_lr=0.005,
                                             epochs=EPOCHS,
                                             steps_per_epoch=int(len(self._trainidx) / BATCH_SIZE),
                                             verbose=False),
@@ -205,7 +205,7 @@ def main():
 
     trainer = Trainer(gpus=1,
                       precision=32,
-                      max_epochs=1,
+                      max_epochs=EPOCHS,
                       log_every_n_steps=5,
                       flush_logs_every_n_steps=10,
                       callbacks=[checkpoint_callback, early_stop_callback])
