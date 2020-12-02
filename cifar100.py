@@ -64,11 +64,11 @@ class Cifar100Dataset(Dataset):
 
 
 class Cifar100EfficientNetModule(LightningModule):
-    def __init__(self, alpha=0.8, n: int = 3):
+    def __init__(self, alpha=0.8, n: int = 3, efficientnet: str = 'efficientnet-b0'):
         super().__init__()
         self.alpha = alpha
         self.n = n
-        self._enet = EfficientNet.from_name('efficientnet-b0', num_classes=100)
+        self._enet = EfficientNet.from_name(efficientnet, num_classes=100)
         self._trainval = pickle.loads(open('cifar-100-python/train', 'rb').read(), encoding='bytes')
         self._test = pickle.loads(open('cifar-100-python/test', 'rb').read(), encoding='bytes')
 
@@ -192,7 +192,7 @@ class Cifar100EfficientNetModule(LightningModule):
 
 
 def main():
-    model = Cifar100EfficientNetModule(alpha=0.8, n=3)
+    model = Cifar100EfficientNetModule(alpha=0.8, n=3, efficientnet='efficientnet-b0')
 
     checkpoint_callback = ModelCheckpoint(monitor='val_loss',
                                           dirpath='checkpoints/',
