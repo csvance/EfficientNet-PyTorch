@@ -1,16 +1,21 @@
 from efficientnet_pytorch import EfficientNet
 from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
 from pytorch_lightning import LightningModule, Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from torch.optim.lr_scheduler import OneCycleLR
+
 from torch.nn import functional as F
+import pytorch_lightning as pl
 from torch import nn
 import torch
 import cv2
-from torch_optimizer import Lookahead, RAdam
 from skimage.transform import AffineTransform
 import numpy as np
 import pickle
 
 NUM_WORKERS = 0
+EPOCHS = 1
+BATCH_SIZE = 32
 
 
 class Cifar100Dataset(Dataset):
@@ -31,7 +36,7 @@ class Cifar100Dataset(Dataset):
         for idx, img in enumerate(imgs):
 
             if idx > 0:
-                alpha = np.random.uniform(224/32*0.8, 224/32*1.2)
+                alpha = np.random.uniform(224 / 32 * 0.8, 224 / 32 * 1.2)
                 M = AffineTransform(scale=(alpha, alpha))
                 img = cv2.warpPerspective(img, M.params, dsize=(224, 224), flags=cv2.INTER_LINEAR)
             else:
@@ -66,19 +71,27 @@ class Cifar100EfficientNetModule(LightningModule):
         idx = [i for i in range(0, len(self._trainval[b'filenames']))]
         np.random.seed(0)
         np.random.shuffle(idx)
-        cutoff = int(0.8*len(idx))
+        cutoff = int(0.8 * len(idx))
 
         self._trainidx = idx[:cutoff]
         self._valididx = idx[cutoff:]
+
+        self.accuracy = pl.metrics.Accuracy()
 
     def forward(self, x, sub_w: float = 1.):
         return self._enet.forward(x, sub_w=sub_w)
 
     def training_step(self, batch, batch_nb):
         x, x_n, y_target = batch
+
         # full network
         y = self.forward(x)
         loss = F.cross_entropy(y, y_target)
+        acc_step = self.accuracy(y, y_target)
+        self.log('train_acc', acc_step, prog_bar=True, logger=True)
+        self.log('train_loss', loss, prog_bar=False, logger=True)
+        self.log('lr', self.optimizers().param_groups[0]['lr'])
+        self.log('momentum', self.optimizers().param_groups[0]['momentum'])
 
         loss.backward()
         y_soft = F.softmax(y.detach(), dim=-1)
@@ -90,62 +103,115 @@ class Cifar100EfficientNetModule(LightningModule):
             loss_n = nn.KLDivLoss(reduction='batchmean')(y_sub, y_soft)
             loss_n.backward()
 
-        tensorboard_logs = {'train_loss': loss}
-        return {'loss': loss, 'log': tensorboard_logs}
+        return {'loss': loss}
 
-    def backward(self, trainer, loss: torch.Tensor, optimizer: torch.optim.Optimizer, optimizer_idx: int) -> None:
+    def training_epoch_end(self, outs):
+        self.accuracy.reset()
+
+    def backward(self, loss: torch.Tensor, optimizer: torch.optim.Optimizer, optimizer_idx: int, *args,
+                 **kwargs) -> None:
         pass
 
     def validation_step(self, batch, batch_nb):
-        x, _, y = batch
-        y_hat = self(x)
-        return {'val_loss': F.cross_entropy(y_hat, y)}
+        x, _, y_target = batch
+        y = self(x)
+
+        self.accuracy(y, y_target)
+        self.log('valid_acc', self.accuracy.compute(), prog_bar=True, logger=False)
+
+        return {'val_loss': F.cross_entropy(y, y_target)}
 
     def validation_epoch_end(self, outputs):
         avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        tensorboard_logs = {'val_loss': avg_loss}
-        return {'val_loss': avg_loss, 'log': tensorboard_logs}
+
+        self.log('valid_acc', self.accuracy.compute(), prog_bar=False, logger=True)
+        self.log('valid_loss', avg_loss, prog_bar=False, logger=True)
+
+        self.accuracy.reset()
+
+        return {'val_loss': avg_loss}
 
     def test_step(self, batch, batch_nb):
-        x, _, y = batch
-        y_hat = self(x)
-        return {'test_loss': F.cross_entropy(y_hat, y)}
+        x, _, y_target = batch
+        y = self(x)
+
+        loss = F.cross_entropy(y, y_target)
+
+        self.log('test_acc', self.accuracy(y, y_target), prog_bar=True, logger=False)
+
+        return {'test_loss': loss}
 
     def test_epoch_end(self, outputs):
         avg_loss = torch.stack([x['test_loss'] for x in outputs]).mean()
-        logs = {'test_loss': avg_loss}
-        return {'test_loss': avg_loss, 'log': logs, 'progress_bar': logs}
+
+        self.log('test_acc', self.accuracy.compute(), prog_bar=False, logger=True)
+        self.log('test_loss', avg_loss, prog_bar=False, logger=True)
+
+        self.accuracy.reset()
+
+        return {'test_loss': avg_loss}
 
     def configure_optimizers(self):
-        return torch.optim.RMSprop(self.parameters(),
-                                   lr=0.001,
-                                   momentum=0.,
-                                   weight_decay=1e-4,
-                                   eps=1e-5)
+        optimizer = torch.optim.RMSprop(self.parameters(),
+                                        lr=0.001,
+                                        momentum=0.,
+                                        weight_decay=1e-4,
+                                        eps=1e-5)
+        schedule = {'scheduler': OneCycleLR(optimizer,
+                                            max_lr=0.01,
+                                            epochs=EPOCHS,
+                                            steps_per_epoch=int(len(self._trainidx)/BATCH_SIZE),
+                                            verbose=True),
+                    'name': 'learning_rate',
+                    'interval': 'step',
+                    'frequency': 1
+                    }
+
+        return [optimizer], [schedule]
 
     def train_dataloader(self):
         return DataLoader(Cifar100Dataset(self._trainval),
                           sampler=SubsetRandomSampler(self._trainidx),
-                          batch_size=32,
+                          batch_size=BATCH_SIZE,
                           drop_last=True,
                           num_workers=NUM_WORKERS)
 
     def val_dataloader(self):
         return DataLoader(Cifar100Dataset(self._trainval, n=0),
                           sampler=SubsetRandomSampler(self._valididx),
-                          batch_size=32,
+                          batch_size=BATCH_SIZE,
                           num_workers=NUM_WORKERS)
 
     def test_dataloader(self):
         return DataLoader(Cifar100Dataset(self._test, n=0),
-                          batch_size=32,
+                          batch_size=BATCH_SIZE,
                           num_workers=NUM_WORKERS)
 
 
 def main():
     model = Cifar100EfficientNetModule(alpha=0.8, n=3)
-    trainer = Trainer(gpus=1, precision=32)
+
+    checkpoint_callback = ModelCheckpoint(monitor='val_loss',
+                                          dirpath='checkpoints/',
+                                          filename='cifar-100-{epoch:02d}-{val_loss:.2f}',
+                                          save_top_k=3,
+                                          verbose=True,
+                                          mode='min')
+    early_stop_callback = EarlyStopping(
+        monitor='val_loss',
+        patience=10,
+        verbose=True,
+        mode='min'
+    )
+
+    trainer = Trainer(gpus=1,
+                      precision=32,
+                      max_epochs=1,
+                      log_every_n_steps=5,
+                      flush_logs_every_n_steps=10,
+                      callbacks=[checkpoint_callback, early_stop_callback])
     trainer.fit(model)
+    trainer.test()
 
 
 if __name__ == '__main__':
