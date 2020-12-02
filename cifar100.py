@@ -1,17 +1,21 @@
-from efficientnet_pytorch import EfficientNet
-from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
-from pytorch_lightning import LightningModule, Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
-from torch.optim.lr_scheduler import OneCycleLR
-from torch_optimizer import RAdam, Lookahead
-from torch.nn import functional as F
-import pytorch_lightning as pl
-from torch import nn
-import torch
-import cv2
-from skimage.transform import AffineTransform
-import numpy as np
 import pickle
+
+import cv2
+import numpy as np
+from skimage.transform import AffineTransform
+
+import torch
+from torch import nn
+from torch.nn import functional as F
+from torch.optim.lr_scheduler import OneCycleLR
+from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
+from torch_optimizer import RAdam, Lookahead
+
+import pytorch_lightning as pl
+from pytorch_lightning import LightningModule, Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint
+
+from efficientnet_pytorch import EfficientNet
 
 NUM_WORKERS = 0
 EPOCHS = 20
