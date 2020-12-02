@@ -91,15 +91,6 @@ class Cifar100EfficientNetModule(LightningModule):
         self._trainval = pickle.loads(open('cifar-100-python/train', 'rb').read(), encoding='bytes')
         self._test = pickle.loads(open('cifar-100-python/test', 'rb').read(), encoding='bytes')
 
-        idx = [i for i in range(0, len(self._trainval[b'filenames']))]
-        np.random.seed(0)
-        np.random.shuffle(idx)
-        cutoff = int(0.8 * len(idx))
-
-        self._trainidx = idx[:cutoff]
-        self._valididx = idx[cutoff:]
-        self._idx = idx
-
         self.accuracy = pl.metrics.Accuracy()
 
     def forward(self, x, sub_w: float = 1.):
@@ -164,7 +155,7 @@ class Cifar100EfficientNetModule(LightningModule):
         schedule = {'scheduler': OneCycleLR(optimizer,
                                             max_lr=MAX_LR,
                                             epochs=EPOCHS,
-                                            steps_per_epoch=int(len(self._idx) / BATCH_SIZE),
+                                            steps_per_epoch=int(len(self._trainval[b'filenames']) / BATCH_SIZE),
                                             verbose=False),
                     'name': 'learning_rate',
                     'interval': 'step',
