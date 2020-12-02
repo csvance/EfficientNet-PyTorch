@@ -23,7 +23,7 @@ MAX_LR = 0.01
 WEIGHT_DECAY = 1e-4
 
 # p is the amount of padding on each side of the image
-P = 2
+P = 1
 # sz is the size of the image before padding
 SZ = 32
 # szt is the target size
