@@ -8,19 +8,19 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
+from torch.utils.data import Dataset, DataLoader
 from torch_optimizer import RAdam, Lookahead
 
 import pytorch_lightning as pl
 from pytorch_lightning import LightningModule, Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
 
 from efficientnet_pytorch import EfficientNet
 
 NUM_WORKERS = 0
-EPOCHS = 20
+EPOCHS = 12
 BATCH_SIZE = 32
 MAX_LR = 0.01
+WEIGHT_DECAY = 1e-4
 
 
 class Cifar100Dataset(Dataset):
@@ -80,6 +80,7 @@ class Cifar100EfficientNetModule(LightningModule):
 
         self._trainidx = idx[:cutoff]
         self._valididx = idx[cutoff:]
+        self._idx = idx
 
         self.accuracy = pl.metrics.Accuracy()
 
@@ -117,25 +118,6 @@ class Cifar100EfficientNetModule(LightningModule):
                  **kwargs) -> None:
         pass
 
-    def validation_step(self, batch, batch_nb):
-        x, _, y_target = batch
-        y = self(x)
-
-        self.accuracy(y, y_target)
-        self.log('valid_acc', self.accuracy.compute(), prog_bar=True, logger=False)
-
-        return {'val_loss': F.cross_entropy(y, y_target)}
-
-    def validation_epoch_end(self, outputs):
-        avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-
-        self.log('valid_acc', self.accuracy.compute(), prog_bar=False, logger=True)
-        self.log('valid_loss', avg_loss, prog_bar=False, logger=True)
-
-        self.accuracy.reset()
-
-        return {'val_loss': avg_loss}
-
     def test_step(self, batch, batch_nb):
         x, _, y_target = batch
         y = self(x)
@@ -159,7 +141,7 @@ class Cifar100EfficientNetModule(LightningModule):
     def configure_optimizers(self):
         optimizer = Lookahead(RAdam(self.parameters(),
                                     lr=0.001,
-                                    weight_decay=1e-4,
+                                    weight_decay=WEIGHT_DECAY,
                                     eps=1e-5))
         schedule = {'scheduler': OneCycleLR(optimizer,
                                             max_lr=MAX_LR,
@@ -175,15 +157,9 @@ class Cifar100EfficientNetModule(LightningModule):
 
     def train_dataloader(self):
         return DataLoader(Cifar100Dataset(self._trainval),
-                          sampler=SubsetRandomSampler(self._trainidx),
                           batch_size=BATCH_SIZE,
+                          shuffle=True,
                           drop_last=True,
-                          num_workers=NUM_WORKERS)
-
-    def val_dataloader(self):
-        return DataLoader(Cifar100Dataset(self._trainval, n=0),
-                          sampler=SubsetRandomSampler(self._valididx),
-                          batch_size=BATCH_SIZE,
                           num_workers=NUM_WORKERS)
 
     def test_dataloader(self):
@@ -196,21 +172,13 @@ def main():
     model = Cifar100EfficientNetModule(alpha=0.8, n=3,
                                        efficientnet='efficientnet-b0')
 
-    checkpoint_callback = ModelCheckpoint(monitor='val_loss',
-                                          dirpath='checkpoints/',
-                                          filename='cifar-100-{epoch:02d}-{val_loss:.2f}',
-                                          save_top_k=3,
-                                          verbose=True,
-                                          mode='min')
-
     trainer = Trainer(gpus=1,
                       precision=32,
                       max_epochs=EPOCHS,
                       log_every_n_steps=5,
-                      flush_logs_every_n_steps=10,
-                      callbacks=[checkpoint_callback])
+                      flush_logs_every_n_steps=10)
     trainer.fit(model)
-    trainer.save_checkpoint('checkpoints/cifar-100-final.ckpt')
+    trainer.save_checkpoint('checkpoints/cifar-100.ckpt')
     trainer.test()
 
 
