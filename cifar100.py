@@ -3,7 +3,7 @@ from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
 from pytorch_lightning import LightningModule, Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from torch.optim.lr_scheduler import OneCycleLR
-
+from torch_optimizer import RAdam, Lookahead
 from torch.nn import functional as F
 import pytorch_lightning as pl
 from torch import nn
@@ -14,7 +14,7 @@ import numpy as np
 import pickle
 
 NUM_WORKERS = 0
-EPOCHS = 1
+EPOCHS = 10
 BATCH_SIZE = 32
 
 
@@ -91,7 +91,7 @@ class Cifar100EfficientNetModule(LightningModule):
         self.log('train_acc', acc_step, prog_bar=True, logger=True)
         self.log('train_loss', loss, prog_bar=False, logger=True)
         self.log('lr', self.optimizers().param_groups[0]['lr'])
-        self.log('momentum', self.optimizers().param_groups[0]['momentum'])
+        self.log('momentum', self.optimizers().param_groups[0]['betas'][0])
 
         loss.backward()
         y_soft = F.softmax(y.detach(), dim=-1)
@@ -152,16 +152,15 @@ class Cifar100EfficientNetModule(LightningModule):
         return {'test_loss': avg_loss}
 
     def configure_optimizers(self):
-        optimizer = torch.optim.RMSprop(self.parameters(),
-                                        lr=0.001,
-                                        momentum=0.,
-                                        weight_decay=1e-4,
-                                        eps=1e-5)
+        optimizer = Lookahead(RAdam(self.parameters(),
+                                    lr=0.001,
+                                    weight_decay=1e-4,
+                                    eps=1e-5))
         schedule = {'scheduler': OneCycleLR(optimizer,
                                             max_lr=0.01,
                                             epochs=EPOCHS,
-                                            steps_per_epoch=int(len(self._trainidx)/BATCH_SIZE),
-                                            verbose=True),
+                                            steps_per_epoch=int(len(self._trainidx) / BATCH_SIZE),
+                                            verbose=False),
                     'name': 'learning_rate',
                     'interval': 'step',
                     'frequency': 1
